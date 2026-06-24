@@ -2,12 +2,14 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -39,7 +41,7 @@ func main() {
 		}
 		return scanner.Text(), true
 	}
-	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition, EditFileDefinition}
+	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition, EditFileDefinition, GitCommandDefinition}
 	agent := NewAgent(&client, getUserMessage, tools)
 	err := agent.Run(context.TODO())
 	if err != nil {
@@ -346,4 +348,63 @@ type Agent struct {
 	client         *anthropic.Client
 	getUserMessage func() (string, bool)
 	tools          []ToolDefinition
+}
+
+// Tool: GitCommand (created by the agent itself)
+var GitCommandDefinition = ToolDefinition{
+	Name:        "git_command",
+	Description: "Execute a git command. Supports: status, add, commit, push, pull, log, diff. Use this to manage version control operations.",
+	InputSchema: GitCommandInputSchema,
+	Function:    GitCommand,
+}
+
+type GitCommandInput struct {
+	Command string `json:"command" jsonschema_description:"Git command to execute: status, add, commit, push, pull, log, diff"`
+	Args    string `json:"args,omitempty" jsonschema_description:"Arguments for the git command (e.g., file paths, commit messages)"`
+}
+
+var GitCommandInputSchema = GenerateSchema[GitCommandInput]()
+
+func GitCommand(input json.RawMessage) (string, error) {
+	gitInput := GitCommandInput{}
+	err := json.Unmarshal(input, &gitInput)
+	if err != nil {
+		return "", err
+	}
+
+	// Allowed git commands for safety
+	allowedCommands := map[string]bool{
+		"status": true,
+		"add":    true,
+		"commit": true,
+		"push":   true,
+		"pull":   true,
+		"log":    true,
+		"diff":   true,
+	}
+
+	if !allowedCommands[gitInput.Command] {
+		return "", fmt.Errorf("command '%s' not allowed. Use one of: status, add, commit, push, pull, log, diff", gitInput.Command)
+	}
+
+	var cmd *exec.Cmd
+	if gitInput.Args != "" {
+		cmd = exec.Command("git", gitInput.Command, gitInput.Args)
+	} else {
+		cmd = exec.Command("git", gitInput.Command)
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	if err != nil {
+		if stderr.Len() > 0 {
+			return stderr.String(), err
+		}
+		return "", err
+	}
+
+	return stdout.String(), nil
 }
