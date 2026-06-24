@@ -8,7 +8,9 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/invopop/jsonschema"
@@ -37,7 +39,7 @@ func main() {
 		}
 		return scanner.Text(), true
 	}
-	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition}
+	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition, EditFileDefinition}
 	agent := NewAgent(&client, getUserMessage, tools)
 	err := agent.Run(context.TODO())
 	if err != nil {
@@ -55,7 +57,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	for {
 		//Input vom User entgegennehmen
 		if readUserInput {
-			fmt.Print("\x1b[94mUser\x1b[0m: ")
+			fmt.Print("\x1b[38;5;39mUser\x1b[0m: ")
 			userInput, ok := a.getUserMessage()
 			if !ok {
 				break
@@ -74,7 +76,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		for _, content := range message.Content {
 			switch content.Type {
 			case "text":
-				fmt.Printf("\x1b[93mClaude\x1b[0m: %s\n", content.Text)
+				fmt.Printf("\x1b[38;5;208mClaude\x1b[0m: %s\n", content.Text)
 			case "tool_use":
 				result := a.executeTool(content.ID, content.Name, content.Input)
 				toolResults = append(toolResults, result)
@@ -109,12 +111,12 @@ func (a *Agent) executeTool(id, name string, input json.RawMessage) anthropic.Co
 		return anthropic.NewToolResultBlock(id, "tool not found", true)
 	}
 
-	fmt.Printf("\x1b[92mtool\x1b[0m: %s(%s)\n", name, input)
+	fmt.Printf("\x1b[38;5;46mTool\x1b[0m: %s(%s)\n", name, input)
 	response, err := toolDef.Function(input)
 	if err != nil {
 		return anthropic.NewToolResultBlock(id, err.Error(), true)
 	}
-	fmt.Printf("\x1b[95mtool result: %s\x1b[0m\n", response)
+	fmt.Printf("\x1b[38;5;82mResult\x1b[0m: %s\n", response)
 	return anthropic.NewToolResultBlock(id, response, false)
 }
 
@@ -144,7 +146,7 @@ func GenerateSchema[T any]() anthropic.ToolInputSchemaParam {
 	}
 }
 
-// ReadFile
+// Tool: ReadFile
 var ReadFileDefinition = ToolDefinition{
 	Name:        "read_file",
 	Description: "Read the contents of a given relative file path. Use this when you want to see whats in the file. Don´t use it on directory names.",
@@ -177,7 +179,7 @@ func ReadFile(input json.RawMessage) (string, error) {
 	return string(content), nil
 }
 
-// ListFiles
+// Tool: ListFiles
 var ListFilesDefinition = ToolDefinition{
 	Name:        "list_files",
 	Description: "List files and directory at a given path. If no path is provided, lists files in the current directory",
@@ -236,7 +238,74 @@ func ListFiles(input json.RawMessage) (string, error) {
 		return "", err
 	}
 	return string(result), nil
+}
 
+// Tool: EditFile
+var EditFileDefinition = ToolDefinition{
+	Name: "edit_file",
+	Description: `Make edits to a text file.
+
+Replaces 'old_str' with 'new_str' in the given file. 'old_str' and 'new_str' MUST be different from each other.
+
+If the file specified with path doesn't exist, it will be created.
+`,
+	InputSchema: EditFileInputSchema,
+	Function:    EditFile,
+}
+
+type EditFileInput struct {
+	Path   string `json:"path" jsonschema_description:"The path to the file"`
+	OldStr string `json:"old_str" jsonschema_description:"Text to search for - must match exactly and must only have one match exactly"`
+	NewStr string `json:"new_str" jsonschema_description:"Text to replace old_str with"`
+}
+
+var EditFileInputSchema = GenerateSchema[EditFileInput]()
+
+func EditFile(input json.RawMessage) (string, error) {
+	editFileInput := EditFileInput{}
+	err := json.Unmarshal(input, &editFileInput)
+	if err != nil {
+		return "", err
+	}
+
+	if editFileInput.Path == "" || editFileInput.OldStr == editFileInput.NewStr {
+		return "", fmt.Errorf("invalid input")
+	}
+	content, err := os.ReadFile(editFileInput.Path)
+	if err != nil {
+		if os.IsNotExist(err) && editFileInput.OldStr == "" {
+			return createNewFile(editFileInput.Path, editFileInput.NewStr)
+		}
+		return "", err
+	}
+	oldContent := string(content)
+	newContent := strings.Replace(oldContent, editFileInput.OldStr, editFileInput.NewStr, -1)
+
+	if oldContent == newContent && editFileInput.OldStr != "" {
+		return "", fmt.Errorf("old_str not found in file")
+	}
+
+	err = os.WriteFile(editFileInput.Path, []byte(newContent), 0644)
+	if err != nil {
+		return "", nil
+	}
+	return "OK", nil
+}
+
+func createNewFile(filePpath, content string) (string, error) {
+	dir := path.Dir(filePpath)
+	if dir != "." {
+		err := os.MkdirAll(dir, 0755)
+		if err != nil {
+			return "", fmt.Errorf("failed  to create directory %w", err)
+		}
+	}
+	err := os.WriteFile(filePpath, []byte(content), 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to create File")
+	}
+
+	return fmt.Sprintf("Successfully created file %s", filePpath), nil
 }
 
 func (a *Agent) runInference(ctx context.Context, conversation []anthropic.MessageParam) (anthropic.Message, error) {
