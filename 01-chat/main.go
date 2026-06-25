@@ -78,7 +78,7 @@ func NewAgent(client *anthropic.Client, getUserMessage func() (string, bool)) *A
 func (a *Agent) Run(ctx context.Context) error {
 	conversation := []anthropic.MessageParam{}
 
-	fmt.Println("=== Stufe 1: Reiner Chat mit dem LLM – noch keine Tools ===")
+	fmt.Println("=== Reiner Chat mit dem LLM  ===")
 	fmt.Println("Chat with claude (ctrl + c to quit)")
 
 	for {
