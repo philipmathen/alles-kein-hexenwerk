@@ -1,22 +1,15 @@
-// Schritt 5: Tool "git_command" hinzufügen – der vollständige Agent.
-//
-// Neu gegenüber Schritt 4: Der Agent bekommt Zugriff auf Git. Mit einer
-// Whitelist erlaubter Befehle (status, add, commit, push, pull, log, diff)
-// kann er Versionskontrolle übernehmen, ohne dass beliebige Shell-Befehle
-// ausgeführt werden. Damit ist der Coding-Agent komplett: lesen, erkunden,
-// editieren und committen.
+// Schritt 5: der Agent verändert sich selbst
+
 package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -39,7 +32,7 @@ func main() {
 		return scanner.Text(), true
 	}
 
-	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition, EditFileDefinition, GitCommandDefinition}
+	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition, EditFileDefinition}
 	agent := NewAgent(&client, getUserMessage, tools)
 	err := agent.Run(context.TODO())
 	if err != nil {
@@ -49,7 +42,7 @@ func main() {
 
 // loadEnv sucht ab dem Arbeitsverzeichnis aufwärts nach einer .env Datei.
 // Dadurch funktioniert jeder Schritt – egal ob aus dem Repo-Root
-// (go run ./05-git) oder direkt aus dem Ordner (go run .) gestartet.
+// (go run ./04-edit-file) oder direkt aus dem Ordner (go run .) gestartet.
 func loadEnv() {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -93,7 +86,7 @@ func NewAgent(
 func (a *Agent) Run(ctx context.Context) error {
 	conversation := []anthropic.MessageParam{}
 
-	fmt.Println("=== Stufe 5: + git_command – der vollständige Coding-Agent ===")
+	fmt.Println("=== Es wird magisch 🧙‍♂️ ===")
 	fmt.Println("Chat with claude (ctrl + c to quit)")
 
 	// Flag ob der User dran ist
@@ -378,63 +371,4 @@ func createNewFile(filePath, content string) (string, error) {
 	}
 
 	return fmt.Sprintf("Successfully created file %s", filePath), nil
-}
-
-// Tool: GitCommand
-var GitCommandDefinition = ToolDefinition{
-	Name:        "git_command",
-	Description: "Execute a git command. Supports: status, add, commit, push, pull, log, diff. Use this to manage version control operations.",
-	InputSchema: GitCommandInputSchema,
-	Function:    GitCommand,
-}
-
-type GitCommandInput struct {
-	Command string `json:"command" jsonschema_description:"Git command to execute: status, add, commit, push, pull, log, diff"`
-	Args    string `json:"args,omitempty" jsonschema_description:"Arguments for the git command (e.g., file paths, commit messages)"`
-}
-
-var GitCommandInputSchema = GenerateSchema[GitCommandInput]()
-
-func GitCommand(input json.RawMessage) (string, error) {
-	gitInput := GitCommandInput{}
-	err := json.Unmarshal(input, &gitInput)
-	if err != nil {
-		return "", err
-	}
-
-	// Allowed git commands for safety
-	allowedCommands := map[string]bool{
-		"status": true,
-		"add":    true,
-		"commit": true,
-		"push":   true,
-		"pull":   true,
-		"log":    true,
-		"diff":   true,
-	}
-
-	if !allowedCommands[gitInput.Command] {
-		return "", fmt.Errorf("command '%s' not allowed. Use one of: status, add, commit, push, pull, log, diff", gitInput.Command)
-	}
-
-	var cmd *exec.Cmd
-	if gitInput.Args != "" {
-		cmd = exec.Command("git", gitInput.Command, gitInput.Args)
-	} else {
-		cmd = exec.Command("git", gitInput.Command)
-	}
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err = cmd.Run()
-	if err != nil {
-		if stderr.Len() > 0 {
-			return stderr.String(), err
-		}
-		return "", err
-	}
-
-	return stdout.String(), nil
 }

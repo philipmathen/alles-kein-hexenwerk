@@ -11,7 +11,6 @@ einzelne Teil beiträgt.
 | 2 | [`02-read-file`](02-read-file) | Tool-Infrastruktur + `read_file` |
 | 3 | [`03-list-files`](03-list-files) | `list_files` – der Agent kann das Dateisystem erkunden |
 | 4 | [`04-edit-file`](04-edit-file) | `edit_file` – der Agent kann Dateien schreiben/ändern |
-| 5 | [`05-git`](05-git) | `git_command` – Versionskontrolle, der vollständige Agent |
 
 ## Setup
 
@@ -35,7 +34,6 @@ go run ./01-chat
 go run ./02-read-file
 go run ./03-list-files
 go run ./04-edit-file
-go run ./05-git
 ```
 
 Oder direkt aus dem Ordner einer Stufe:
