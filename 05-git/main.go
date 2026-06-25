@@ -93,6 +93,7 @@ func NewAgent(
 func (a *Agent) Run(ctx context.Context) error {
 	conversation := []anthropic.MessageParam{}
 
+	fmt.Println("=== Stufe 5: + git_command – der vollständige Coding-Agent ===")
 	fmt.Println("Chat with claude (ctrl + c to quit)")
 
 	// Flag ob der User dran ist

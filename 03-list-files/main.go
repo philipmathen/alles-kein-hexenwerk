@@ -89,6 +89,7 @@ func NewAgent(
 func (a *Agent) Run(ctx context.Context) error {
 	conversation := []anthropic.MessageParam{}
 
+	fmt.Println("=== Stufe 3: + list_files – der Agent erkundet das Dateisystem ===")
 	fmt.Println("Chat with claude (ctrl + c to quit)")
 
 	// Flag ob der User dran ist
