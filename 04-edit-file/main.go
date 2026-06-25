@@ -1,15 +1,19 @@
+// Schritt 4: Tool "edit_file" hinzufügen.
+//
+// Neu gegenüber Schritt 3: Der Agent kann jetzt nicht nur lesen, sondern auch
+// schreiben. edit_file ersetzt 'old_str' durch 'new_str' in einer Datei – und
+// legt die Datei neu an, wenn 'old_str' leer ist. Damit wird aus dem reinen
+// "Leser" ein echter Coding-Agent, der Änderungen am Code vornehmen kann.
 package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -19,18 +23,8 @@ import (
 	"github.com/lpernett/godotenv"
 )
 
-func init() {
-	if _, err := os.Stat(".env"); err == nil {
-		err := godotenv.Load()
-		if err != nil {
-			log.Fatalf("Error loading .env file: %v", err)
-		}
-	} else {
-		log.Fatal(".env File not found")
-	}
-}
-
 func main() {
+	loadEnv()
 
 	client := anthropic.NewClient()
 
@@ -41,13 +35,56 @@ func main() {
 		}
 		return scanner.Text(), true
 	}
-	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition, EditFileDefinition, GitCommandDefinition}
+
+	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition, EditFileDefinition}
 	agent := NewAgent(&client, getUserMessage, tools)
 	err := agent.Run(context.TODO())
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
 	}
+}
 
+// loadEnv sucht ab dem Arbeitsverzeichnis aufwärts nach einer .env Datei.
+// Dadurch funktioniert jeder Schritt – egal ob aus dem Repo-Root
+// (go run ./04-edit-file) oder direkt aus dem Ordner (go run .) gestartet.
+func loadEnv() {
+	dir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("could not determine working directory: %v", err)
+	}
+	for {
+		envPath := filepath.Join(dir, ".env")
+		if _, err := os.Stat(envPath); err == nil {
+			if err := godotenv.Load(envPath); err != nil {
+				log.Fatalf("Error loading .env file: %v", err)
+			}
+			return
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	log.Fatal(".env file not found")
+}
+
+type Agent struct {
+	client         *anthropic.Client
+	getUserMessage func() (string, bool)
+	tools          []ToolDefinition
+}
+
+func NewAgent(
+	client *anthropic.Client,
+	getUserMessage func() (string, bool),
+	tools []ToolDefinition,
+) *Agent {
+	return &Agent{
+		client:         client,
+		getUserMessage: getUserMessage,
+		tools:          tools,
+	}
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -59,7 +96,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	readUserInput := true
 	// Agent Loop
 	for {
-		//Input vom User entgegennehmen
+		// Input vom User entgegennehmen
 		if readUserInput {
 			fmt.Print("\x1b[38;5;39mUser\x1b[0m: ")
 			userInput, ok := a.getUserMessage()
@@ -70,7 +107,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			conversation = append(conversation, userMessage)
 		}
 
-		// Antwort vom Modell genrieren und an die Konversation anhängen
+		// Antwort vom Modell generieren und an die Konversation anhängen
 		message, err := a.runInference(ctx, conversation)
 		if err != nil {
 			return err
@@ -79,25 +116,25 @@ func (a *Agent) Run(ctx context.Context) error {
 
 		toolResults := []anthropic.ContentBlockParamUnion{}
 
-		//Antwort vom Modell prüfen
+		// Antwort vom Modell prüfen
 		for _, content := range message.Content {
 			switch content.Type {
-			// Wenn es text ist im Terminal anzeigen
+			// Wenn es Text ist, im Terminal anzeigen
 			case "text":
 				fmt.Printf("\x1b[38;5;208mClaude\x1b[0m: %s\n", content.Text)
-				// Wenn es ein Toolcall ist, das Tool mit dem Input ausführen und das Ergebnis speichern
+			// Wenn es ein Toolcall ist, das Tool mit dem Input ausführen und das Ergebnis speichern
 			case "tool_use":
 				result := a.executeTool(content.ID, content.Name, content.Input)
 				toolResults = append(toolResults, result)
 			}
 		}
-		// Wenn es keine Ergebnisse aus den Tools gibt ist der User wieder dran
+		// Wenn es keine Ergebnisse aus den Tools gibt, ist der User wieder dran
 		if len(toolResults) == 0 {
 			readUserInput = true
 			continue
 		}
-		// Wenn ein Tool Ergebnisse geliefert hat, dann wird das Egebnis
-		// in den Kontext eingefügt und direkt wieder in das LLM gefüttert
+		// Wenn ein Tool Ergebnisse geliefert hat, wird das Ergebnis in den
+		// Kontext eingefügt und direkt wieder in das LLM gefüttert
 		readUserInput = false
 		conversation = append(conversation, anthropic.NewUserMessage(toolResults...))
 	}
@@ -107,7 +144,7 @@ func (a *Agent) Run(ctx context.Context) error {
 func (a *Agent) executeTool(id, name string, input json.RawMessage) anthropic.ContentBlockParamUnion {
 	var toolDef ToolDefinition
 	var found bool
-	//verfügabre Tools des Agenten prüfen
+	// Verfügbare Tools des Agenten prüfen
 	for _, tool := range a.tools {
 		if tool.Name == name {
 			toolDef = tool
@@ -120,7 +157,7 @@ func (a *Agent) executeTool(id, name string, input json.RawMessage) anthropic.Co
 		return anthropic.NewToolResultBlock(id, "tool not found", true)
 	}
 
-	// Tool und input ausgeben
+	// Tool und Input ausgeben
 	fmt.Printf("\x1b[38;5;46mTool\x1b[0m: %s(%s)\n", name, input)
 
 	// Funktion des Tools ausführen
@@ -133,8 +170,31 @@ func (a *Agent) executeTool(id, name string, input json.RawMessage) anthropic.Co
 	return anthropic.NewToolResultBlock(id, response, false)
 }
 
+func (a *Agent) runInference(ctx context.Context, conversation []anthropic.MessageParam) (anthropic.Message, error) {
+	anthropicTools := []anthropic.ToolUnionParam{}
+
+	for _, tool := range a.tools {
+		anthropicTools = append(anthropicTools, anthropic.ToolUnionParam{
+			OfTool: &anthropic.ToolParam{
+				Name:        tool.Name,
+				Description: anthropic.String(tool.Description),
+				InputSchema: tool.InputSchema,
+			},
+		})
+	}
+
+	message, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.ModelClaudeHaiku4_5,
+		MaxTokens: int64(1024),
+		Messages:  conversation,
+		Tools:     anthropicTools,
+	})
+	return *message, err
+}
+
 // Tools
-// ToolDefinition
+
+// ToolDefinition beschreibt ein Tool, das der Agent benutzen kann.
 type ToolDefinition struct {
 	Name        string
 	Description string
@@ -142,26 +202,18 @@ type ToolDefinition struct {
 	Function    func(input json.RawMessage) (string, error)
 }
 
-// Json Schema als Vertrag mit dem LLM wie ein tool aussehen muss
-// jsonschema verarbeitet die jsonschema struct tags die oben im struct definert wurden
+// GenerateSchema baut aus einem Go-Type per Reflection das JSON-Schema.
+// Das Schema ist der "Vertrag" mit dem LLM: es beschreibt, wie die
+// Tool-Argumente aussehen müssen. Die jsonschema-Struct-Tags am Input-Struct
+// liefern dabei die Beschreibungen der einzelnen Felder.
 func GenerateSchema[T any]() anthropic.ToolInputSchemaParam {
-	// Reflektor ist baut Schema aus Type (wird hier konfiguriert)
 	reflector := jsonschema.Reflector{
 		AllowAdditionalProperties: false,
 		DoNotReference:            true,
 	}
 	var v T
-	//Schema erstellen
 	schema := reflector.Reflect(v)
 
-	schemaBytes, err := json.MarshalIndent(schema, "", "  ")
-	if err != nil {
-		panic(err)
-	}
-	schemaString := string(schemaBytes)
-	fmt.Println(schemaString)
-
-	// Properties in anthropic kompatibles Schema wrappen
 	return anthropic.ToolInputSchemaParam{
 		Properties: schema.Properties,
 	}
@@ -181,22 +233,17 @@ type ReadFileInput struct {
 
 var ReadFileInputSchema = GenerateSchema[ReadFileInput]()
 
-// Function des ReadFile tools
 func ReadFile(input json.RawMessage) (string, error) {
-	// Json rohdaten kommen rein
 	readFileInput := ReadFileInput{}
-	//Json wird in das struct geldaden
 	err := json.Unmarshal(input, &readFileInput)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
-	//Wenn struct gültig geladen, dann File am Path lesen
 	content, err := os.ReadFile(readFileInput.Path)
 	if err != nil {
 		return "", err
 	}
-	// Inhalt des Files als string zurückgeben
 	return string(content), nil
 }
 
@@ -218,7 +265,7 @@ func ListFiles(input json.RawMessage) (string, error) {
 	listFilesInput := ListFilesInput{}
 	err := json.Unmarshal(input, &listFilesInput)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 	dir := "."
 	if listFilesInput.Path != "" {
@@ -308,122 +355,23 @@ func EditFile(input json.RawMessage) (string, error) {
 
 	err = os.WriteFile(editFileInput.Path, []byte(newContent), 0644)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	return "OK", nil
 }
 
-func createNewFile(filePpath, content string) (string, error) {
-	dir := path.Dir(filePpath)
+func createNewFile(filePath, content string) (string, error) {
+	dir := path.Dir(filePath)
 	if dir != "." {
 		err := os.MkdirAll(dir, 0755)
 		if err != nil {
 			return "", fmt.Errorf("failed  to create directory %w", err)
 		}
 	}
-	err := os.WriteFile(filePpath, []byte(content), 0644)
+	err := os.WriteFile(filePath, []byte(content), 0644)
 	if err != nil {
 		return "", fmt.Errorf("failed to create File")
 	}
 
-	return fmt.Sprintf("Successfully created file %s", filePpath), nil
-}
-
-func (a *Agent) runInference(ctx context.Context, conversation []anthropic.MessageParam) (anthropic.Message, error) {
-	anthropicTools := []anthropic.ToolUnionParam{}
-
-	for _, tool := range a.tools {
-		anthropicTools = append(anthropicTools, anthropic.ToolUnionParam{
-			OfTool: &anthropic.ToolParam{
-				Name:        tool.Name,
-				Description: anthropic.String(tool.Description),
-				InputSchema: tool.InputSchema,
-			},
-		})
-	}
-
-	message, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeHaiku4_5,
-		MaxTokens: int64(1024),
-		Messages:  conversation,
-		Tools:     anthropicTools,
-	})
-	return *message, err
-}
-
-func NewAgent(
-	client *anthropic.Client,
-	getUserMessage func() (string, bool),
-	tools []ToolDefinition,
-) *Agent {
-	return &Agent{
-		client:         client,
-		getUserMessage: getUserMessage,
-		tools:          tools,
-	}
-}
-
-type Agent struct {
-	client         *anthropic.Client
-	getUserMessage func() (string, bool)
-	tools          []ToolDefinition
-}
-
-// Tool: GitCommand (created by the agent itself)
-var GitCommandDefinition = ToolDefinition{
-	Name:        "git_command",
-	Description: "Execute a git command. Supports: status, add, commit, push, pull, log, diff. Use this to manage version control operations.",
-	InputSchema: GitCommandInputSchema,
-	Function:    GitCommand,
-}
-
-type GitCommandInput struct {
-	Command string `json:"command" jsonschema_description:"Git command to execute: status, add, commit, push, pull, log, diff"`
-	Args    string `json:"args,omitempty" jsonschema_description:"Arguments for the git command (e.g., file paths, commit messages)"`
-}
-
-var GitCommandInputSchema = GenerateSchema[GitCommandInput]()
-
-func GitCommand(input json.RawMessage) (string, error) {
-	gitInput := GitCommandInput{}
-	err := json.Unmarshal(input, &gitInput)
-	if err != nil {
-		return "", err
-	}
-
-	// Allowed git commands for safety
-	allowedCommands := map[string]bool{
-		"status": true,
-		"add":    true,
-		"commit": true,
-		"push":   true,
-		"pull":   true,
-		"log":    true,
-		"diff":   true,
-	}
-
-	if !allowedCommands[gitInput.Command] {
-		return "", fmt.Errorf("command '%s' not allowed. Use one of: status, add, commit, push, pull, log, diff", gitInput.Command)
-	}
-
-	var cmd *exec.Cmd
-	if gitInput.Args != "" {
-		cmd = exec.Command("git", gitInput.Command, gitInput.Args)
-	} else {
-		cmd = exec.Command("git", gitInput.Command)
-	}
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err = cmd.Run()
-	if err != nil {
-		if stderr.Len() > 0 {
-			return stderr.String(), err
-		}
-		return "", err
-	}
-
-	return stdout.String(), nil
+	return fmt.Sprintf("Successfully created file %s", filePath), nil
 }
