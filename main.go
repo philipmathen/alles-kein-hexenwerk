@@ -55,7 +55,9 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	fmt.Println("Chat with claude (ctrl + c to quit)")
 
+	// Flag ob der User dran ist
 	readUserInput := true
+	// Agent Loop
 	for {
 		//Input vom User entgegennehmen
 		if readUserInput {
@@ -68,23 +70,28 @@ func (a *Agent) Run(ctx context.Context) error {
 			conversation = append(conversation, userMessage)
 		}
 
+		// Antwort vom Modell genrieren und an die Konversation anhängen
 		message, err := a.runInference(ctx, conversation)
 		if err != nil {
 			return err
 		}
-
 		conversation = append(conversation, message.ToParam())
+
 		toolResults := []anthropic.ContentBlockParamUnion{}
+
+		//Antwort vom Modell prüfen
 		for _, content := range message.Content {
 			switch content.Type {
+			// Wenn es text ist im Terminal anzeigen
 			case "text":
 				fmt.Printf("\x1b[38;5;208mClaude\x1b[0m: %s\n", content.Text)
+				// Wenn es ein Toolcall ist, das Tool mit dem Input ausführen und das Ergebnis speichern
 			case "tool_use":
 				result := a.executeTool(content.ID, content.Name, content.Input)
 				toolResults = append(toolResults, result)
 			}
 		}
-		// Wenn es keine Ergebnisse aus den tools gibt ist der User wieder dran
+		// Wenn es keine Ergebnisse aus den Tools gibt ist der User wieder dran
 		if len(toolResults) == 0 {
 			readUserInput = true
 			continue
@@ -113,11 +120,15 @@ func (a *Agent) executeTool(id, name string, input json.RawMessage) anthropic.Co
 		return anthropic.NewToolResultBlock(id, "tool not found", true)
 	}
 
+	// Tool und input ausgeben
 	fmt.Printf("\x1b[38;5;46mTool\x1b[0m: %s(%s)\n", name, input)
+
+	// Funktion des Tools ausführen
 	response, err := toolDef.Function(input)
 	if err != nil {
 		return anthropic.NewToolResultBlock(id, err.Error(), true)
 	}
+	// Ergebnis ausgeben und zurückliefern
 	fmt.Printf("\x1b[38;5;82mResult\x1b[0m: %s\n", response)
 	return anthropic.NewToolResultBlock(id, response, false)
 }
@@ -131,7 +142,7 @@ type ToolDefinition struct {
 	Function    func(input json.RawMessage) (string, error)
 }
 
-// Json Schema als Vertrag mit dem LLM wie ein toolcall aussehen muss
+// Json Schema als Vertrag mit dem LLM wie ein tool aussehen muss
 // jsonschema verarbeitet die jsonschema struct tags die oben im struct definert wurden
 func GenerateSchema[T any]() anthropic.ToolInputSchemaParam {
 	// Reflektor ist baut Schema aus Type (wird hier konfiguriert)
@@ -142,6 +153,14 @@ func GenerateSchema[T any]() anthropic.ToolInputSchemaParam {
 	var v T
 	//Schema erstellen
 	schema := reflector.Reflect(v)
+
+	schemaBytes, err := json.MarshalIndent(schema, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	schemaString := string(schemaBytes)
+	fmt.Println(schemaString)
+
 	// Properties in anthropic kompatibles Schema wrappen
 	return anthropic.ToolInputSchemaParam{
 		Properties: schema.Properties,
