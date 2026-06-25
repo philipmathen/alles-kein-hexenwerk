@@ -50,3 +50,16 @@ Nachricht eintippen und Enter drücken. `Strg+C` zum Beenden.
 Ein Agent ist nur eine **Schleife**: die Konversation an das Modell schicken, die
 angeforderten Tools ausführen, das Ergebnis zurückfüttern, wiederholen – alles
 andere sind Tools.
+
+## Links
+- [How to Build an Agent or: The Emperor Has No Clothes - Thorsten Ball](https://ampcode.com/notes/how-to-build-an-agent)
+
+- [How does Claude Code actually work? - YouTube](https://www.youtube.com/watch?v=I82j7AzMU80)
+
+- [Are LLMs Stateless? The Architecture Behind Agent Memory - Atlan](https://atlan.com/know/are-llms-stateless/)
+
+- [Effective context engineering for AI agents - Anthropic](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+
+- [Writing effective tools for agents — with agents - Anthropic](https://www.anthropic.com/engineering/writing-tools-for-agents)
+
+- [Online Tokenizer](https://gpt-tokenizer.dev/)
