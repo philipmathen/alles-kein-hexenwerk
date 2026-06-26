@@ -22,6 +22,8 @@ Eine `.env` mit deinem Anthropic API Key anlegen:
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
+> Der API Key kann über das [Anthropic Plattform Dashboard](https://platform.claude.com/) angelegt werden.
+
 Jede Stufe sucht ab dem Arbeitsverzeichnis aufwärts nach dieser `.env` – sie wird
 also gefunden, egal aus welchem Ordner das Programm gestartet wird.
 
