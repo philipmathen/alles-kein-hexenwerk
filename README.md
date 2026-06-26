@@ -52,7 +52,9 @@ angeforderten Tools ausführen, das Ergebnis zurückfüttern, wiederholen – al
 andere sind Tools.
 
 ## Links
-- [How to Build an Agent or: The Emperor Has No Clothes - Thorsten Ball](https://ampcode.com/notes/how-to-build-an-agent)
+- [How to Build an Agent - Thorsten Ball (GO implementation)](https://ampcode.com/notes/how-to-build-an-agent)
+
+- [The Emperor has no clothes - Mihail Eric (Python implementation)](https://www.mihaileric.com/The-Emperor-Has-No-Clothes/)
 
 - [How does Claude Code actually work? - YouTube](https://www.youtube.com/watch?v=I82j7AzMU80)
 
